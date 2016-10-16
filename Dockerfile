@@ -17,9 +17,12 @@ RUN apk upgrade --update-cache --available \
     && apk add --virtual .build-deps \
         $LUA_SANDBOX_REQUIRED_BUILD_PKGS \
         $LUA_SANDBOX_OPTIONAL_BUILD_PKGS \
+    # Runtime dependencies
+    # libstdc++: rapidjson
+    && apk add libstdc++ \
     && mkdir $BUILD_DIR \
     && cd $BUILD_DIR \
-    # Clone repos
+    # Clone repos.
     && git clone https://github.com/mozilla-services/lua_sandbox \
     && git clone https://github.com/mozilla-services/lua_sandbox_extensions \
     && git clone https://github.com/trink/hindsight \
@@ -40,15 +43,20 @@ RUN apk upgrade --update-cache --available \
         -DCMAKE_BUILD_TYPE=release \
         -DENABLE_ALL_EXT=true \
         -DCPACK_GENERATOR=TGZ \
+        -DCMAKE_INSTALL_PREFIX:PATH=/usr \
         # Disable some extensions for now that require external libs.
-        # TODO: add libs for these
+        # TODO: Add libs for these.
         -DEXT_kafka=off \
         -DEXT_postgres=off \
         -DEXT_snappy=off \
+        -DEXT_systemd=off \
          .. \
     && make $MAKE_FLAGS \
     # -DCMAKE_INSTALL_PREFIX=/usr wasn't being honored...use DESTDIR instead.
     && DESTDIR=/usr make install \
+    # XXX: This stuff seems to dump into /usr/build? Okay, we copy it out.
+    && cp -R /usr/build/lua_sandbox_extensions/release/install/* /usr/ \
+    && rm -rf /usr/build \
     # hindsight
     && cd $BUILD_DIR/hindsight \
     && git checkout "$HINDSIGHT_REF" \
@@ -61,7 +69,7 @@ RUN apk upgrade --update-cache --available \
     && apk del .build-deps \
     && rm -rf /var/cache/apk/*
 
-# Required for hindsight to source lua_sandbox libs
+# Required for hindsight to source lua_sandbox libs.
 ENV LD_LIBRARY_PATH /usr/lib64
 
 WORKDIR /hs
