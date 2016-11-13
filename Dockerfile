@@ -1,25 +1,26 @@
-# Musl build must implement pthread_timedjoin_np.
-# For this we can use alpine:edge and upgrade to at least v1.1.15.
-FROM alpine:edge
+FROM ubuntu:xenial
 
-ENV LUA_SANDBOX_REF            master
-ENV LUA_SANDBOX_EXTENSIONS_REF master
-ENV HINDSIGHT_REF              master
+ENV LUA_SANDBOX_REF            5e9818a66fa9756ebcfa934f3037d9545c191380
+ENV LUA_SANDBOX_EXTENSIONS_REF a27759cc316000af6ca4c05a998bfcb79d0ec480
+ENV HINDSIGHT_REF              6e5f63e7ffcc7eafb94a6f956d05c1453558f47d
 
 ENV BUILD_DIR /build
 ARG MAKE_FLAGS="-j4"
 
 ENV LUA_SANDBOX_REQUIRED_BUILD_PKGS gcc g++ make cmake git ca-certificates lua5.1-dev
-ENV LUA_SANDBOX_OPTIONAL_BUILD_PKGS openssl-dev zlib-dev geoip-dev
+ENV LUA_SANDBOX_OPTIONAL_BUILD_PKGS libssl-dev zlib1g-dev libgeoip-dev libsystemd-dev
+ENV BUILD_PKGS $LUA_SANDBOX_REQUIRED_BUILD_PKGS $LUA_SANDBOX_OPTIONAL_BUILD_PKGS
 
-RUN apk upgrade --update-cache --available \
+RUN apt-get update \
     # Build dependencies
-    && apk add --virtual .build-deps \
-        $LUA_SANDBOX_REQUIRED_BUILD_PKGS \
-        $LUA_SANDBOX_OPTIONAL_BUILD_PKGS \
+    && apt-get install --no-install-recommends -y \
+        $BUILD_PKGS \
     # Runtime dependencies
-    # libstdc++: rapidjson
-    && apk add libstdc++ \
+    && apt-get install --no-install-recommends -y \
+        # libstdc++: rapidjson
+        libstdc++6 \
+        # systemd extension
+        libsystemd0 \
     && mkdir $BUILD_DIR \
     && cd $BUILD_DIR \
     # Clone repos.
@@ -49,28 +50,24 @@ RUN apk upgrade --update-cache --available \
         -DEXT_kafka=off \
         -DEXT_postgres=off \
         -DEXT_snappy=off \
-        -DEXT_systemd=off \
          .. \
     && make $MAKE_FLAGS \
     # -DCMAKE_INSTALL_PREFIX=/usr wasn't being honored...use DESTDIR instead.
     && DESTDIR=/usr make install \
-    # XXX: This stuff seems to dump into /usr/build? Okay, we copy it out.
-    && cp -R /usr/build/lua_sandbox_extensions/release/install/* /usr/ \
-    && rm -rf /usr/build \
     # hindsight
     && cd $BUILD_DIR/hindsight \
     && git checkout "$HINDSIGHT_REF" \
     && mkdir release \
     && cd release \
-    && cmake -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX:PATH=/usr .. \
+    && cmake -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX:PATH=/usr -DLIB_SUFFIX="" .. \
     && make $MAKE_FLAGS \
     && make install \
     && rm -rf $BUILD_DIR \
-    && apk del .build-deps \
-    && rm -rf /var/cache/apk/*
+    && apt-get autoremove --purge -y $BUILD_PKGS \
+    && rm -rf /var/lib/apt/lists/*
 
 # Required for hindsight to source lua_sandbox libs.
-ENV LD_LIBRARY_PATH /usr/lib64
+#ENV LD_LIBRARY_PATH /usr/lib64
 
 WORKDIR /hs
 
